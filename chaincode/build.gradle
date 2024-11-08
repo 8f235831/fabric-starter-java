@@ -1,0 +1,39 @@
+import pers.u8f23.fabric.plugin.api.*
+
+plugins {
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'application'
+    id 'jacoco'
+    id "org.hidetake.ssh" version "2.11.2"
+    id 'com.github.gmazzo.buildconfig' version '5.5.0'
+    id 'pers.u8f23.fabric.plugin.api' version '0.1.0'
+}
+
+group = "${project.ext.cons.group}.chaincode"
+version = project.ext.cons.version
+
+dependencies {
+    implementation "org.hyperledger.fabric-chaincode-java:fabric-chaincode-shim:${project.ext.versions.fabricChaincodeShim}"
+    implementation 'org.json:json:+'
+    implementation "com.owlike:genson:${project.ext.versions.genson}"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+    }
+}
+
+application {
+    mainClass = 'org.hyperledger.fabric.contract.ContractRouter'
+}
+mainClassName = 'org.hyperledger.fabric.contract.ContractRouter'
+
+apply from: 'deployChaincode.gradle'
+apply from: 'generateConfig.gradle'
+apply from: '../chaincodeDefinition.gradle'
+
+generateApi {
+    sourcePackageName = "${project.ext.cons.group}.chaincode.api"
+    generateType = ChaincodeApiExtension.API_TYPE_CHAINCODE
+}

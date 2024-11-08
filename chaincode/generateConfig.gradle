@@ -1,0 +1,10 @@
+def config = new Properties()
+file("../config.properties").withInputStream { config.load(it) }
+
+buildConfig {
+    packageName(project.group.toString())
+    buildConfigField(String, 'CHAINCODE_NAME', config.fabricChaincodeName)
+    buildConfigField(String, 'CHAINCODE_TITLE', config.fabricChaincodeTitle)
+    buildConfigField(String, 'CHAINCODE_DESCRIPTION', config.fabricChaincodeDescription)
+    buildConfigField(String, 'CHAINCODE_VERSION', project.version)
+}

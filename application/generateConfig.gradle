@@ -1,0 +1,11 @@
+def config = new Properties()
+file("../config.properties").withInputStream { config.load(it) }
+
+buildConfig {
+    packageName(project.group.toString())
+    buildConfigField(String, "VERSION", project.version)
+    buildConfigField(String, 'GATEWAY_HOST', config.hostname)
+    buildConfigField(String, 'CHANNEL_NAME', config.fabricChannelName)
+    buildConfigField(String, 'CHAINCODE_NAME', config.fabricChaincodeName)
+    buildConfigField(String, 'CRYPTO_DIR', "${rootProject.projectDir}${File.separator}cryptoFiles")
+}

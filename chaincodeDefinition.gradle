@@ -1,0 +1,37 @@
+generateApi {
+    classes {
+        // define name of complex api class.
+        complexApiClassName = "ContractApi"
+
+        // define pojo classes.
+        registerPojo("Asset", [
+                "id"              : "String",
+                "creatorId"       : "String",
+                "ownerId"         : "String",
+                "createTime"      : "long",
+                "lastTransferTime": "long",
+                "lastUpdateTime"  : "long",
+                "assetValue"      : "String",
+        ])
+
+        // define api classes.
+        registerApi("AbstractAssetContractSubmit", "submit") {
+            registerMethod("createAsset", [
+                    "value": "String"
+            ])
+            registerMethod("updateAsset", [
+                    "assetId": "String",
+                    "value"  : "String"
+            ])
+            registerMethod("deleteAsset", [
+                    "assetId": "String"
+            ])
+        }
+        registerApi("AbstractAssetContractEvaluate", "evaluate") {
+            registerMethod("findAsset", [
+                    "assetId": "String"
+            ])
+            registerMethod("findAllAsset", [:])
+        }
+    }
+}

@@ -1,0 +1,54 @@
+import pers.u8f23.fabric.plugin.api.*
+
+plugins {
+    id 'java'
+    id "application"
+    id 'com.github.gmazzo.buildconfig' version '5.5.0'
+    id 'pers.u8f23.fabric.plugin.api' version '0.1.0'
+}
+
+group = "${project.ext.cons.group}.app"
+version = project.ext.cons.version
+
+dependencies {
+    // Fabric Gateway
+    implementation "org.hyperledger.fabric:fabric-gateway:${project.ext.versions.fabricGateway}"
+    // GRPC
+    compileOnly "io.grpc:grpc-api:${project.ext.versions.grpc}"
+    runtimeOnly "io.grpc:grpc-netty-shaded:${project.ext.versions.grpc}"
+    // Gson
+    implementation "com.google.code.gson:gson:${project.ext.versions.gson}"
+
+    // project lombok
+    compileOnly "org.projectlombok:lombok:${project.ext.versions.projectLombok}"
+    annotationProcessor "org.projectlombok:lombok:${project.ext.versions.projectLombok}"
+    testCompileOnly "org.projectlombok:lombok:${project.ext.versions.projectLombok}"
+    testAnnotationProcessor "org.projectlombok:lombok:${project.ext.versions.projectLombok}"
+
+    // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+    implementation "org.slf4j:slf4j-api:${project.ext.versions.slf4j}"
+    annotationProcessor "org.slf4j:slf4j-api:${project.ext.versions.slf4j}"
+    // https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
+    implementation "org.slf4j:slf4j-simple:${project.ext.versions.slf4j}"
+    annotationProcessor "org.slf4j:slf4j-simple:${project.ext.versions.slf4j}"
+}
+
+application {
+    mainClass = 'pers.u8f23.fabric.app.Main'
+    applicationDefaultJvmArgs = ['-Dgreeting.language=en']
+    executableDir = project.projectDir
+}
+
+apply from: 'generateConfig.gradle'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+    }
+}
+
+apply from: '../chaincodeDefinition.gradle'
+generateApi {
+    sourcePackageName = "${project.ext.cons.group}.app.api"
+    generateType = ChaincodeApiExtension.API_TYPE_APPLICATION
+}

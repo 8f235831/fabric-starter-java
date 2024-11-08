@@ -1,0 +1,37 @@
+import org.codehaus.groovy.runtime.MethodClosure
+
+static def addRepos(RepositoryHandler handler) {
+    handler.mavenLocal()
+    handler.maven { url 'LocalRepository' }
+    handler.maven { url 'https://maven.aliyun.com/repository/public/' }
+    handler.maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+    handler.maven { url 'https://repo.huaweicloud.com/repository/maven/' }
+    handler.maven { url 'https://repo.nju.edu.cn/repository/maven-public/' }
+    handler.maven { url 'https://maven.aliyun.com/repository/spring/' }
+    handler.maven { url 'https://maven.aliyun.com/repository/spring-plugin' }
+    handler.maven { url 'https://maven.aliyun.com/repository/google' }
+    handler.maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+    handler.maven { url 'https://maven.aliyun.com/repository/grails-core' }
+    handler.maven { url 'https://maven.aliyun.com/repository/apache-snapshots' }
+    handler.mavenCentral()
+}
+
+ext.addRepos = this.&addRepos as MethodClosure
+
+def cons = [
+        version: "0.1.0",
+        group  : 'pers.u8f23.fabric'
+]
+ext.cons = cons
+
+def versions = [:]
+versions.fabricChaincodeShim = "2.5.3"
+versions.fabricGateway = "1.6.0"
+versions.grpc = "1.68.0"
+versions.gson = "2.11.0"
+versions.projectLombok = "1.18.30"
+versions.slf4j = "2.0.6"
+versions.javapoet = "1.12.1"
+versions.genson = "1.6"
+
+ext.versions = versions

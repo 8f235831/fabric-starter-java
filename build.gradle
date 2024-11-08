@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+    id 'pers.u8f23.fabric.plugin.api' version '0.1.0' apply(false)
+}
+
+group = 'pers.u8f23.fabric'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+
+allprojects {
+    // treat java code as UTF-8 encoding while compiling.
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    // add project cons, version codes and maven repos.
+    apply from: "${rootProject.projectDir}/config.gradle"
+    addRepos(repositories)
+}
+

@@ -1,0 +1,27 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+// add project cons, version codes and maven repos.
+apply from: "../config.gradle"
+addRepos(repositories)
+
+group = "${project.ext.cons.group}.plugin"
+version = project.ext.cons.version
+
+
+dependencies {
+    // Gson
+    implementation "com.google.code.gson:gson:${project.ext.versions.gson}"
+    // JavaPoet
+    implementation "com.squareup:javapoet:${project.ext.versions.javapoet}"
+}
+
+gradlePlugin {
+    plugins {
+        apiPlugin {
+            id = "${project.ext.cons.group}.plugin.api"
+            implementationClass = 'pers.u8f23.fabric.plugin.api.ChaincodeApiPlugin'
+        }
+    }
+}

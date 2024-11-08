@@ -1,0 +1,164 @@
+def config = new Properties()
+file("../config.properties").withInputStream { config.load(it) }
+
+remotes {
+    vm {
+        host = config.hostname
+        user = config.userName
+        password = config.password
+        sudoPassword = config.sudoPassword
+    }
+}
+
+final String FABRIC_SAMPLE_HOME = config.fabricSampleHome
+final String FABRIC_WORKBENCH = config.fabricWorkbench
+final String FABRIC_CHANNEL_NAME = config.fabricChannelName
+final String FABRIC_CHAINCODE_NAME = config.fabricChaincodeName
+
+// equals to `./network.sh down` and `./network.sh up createChannel -c mychannel -ca`
+tasks.register('restartNetwork') {
+    doLast {
+        ssh.run {
+            session(remotes.vm) {
+                // shutdown and clear existing docker container.
+                println 'shutdown and clear network...'
+                execute "cd ${FABRIC_SAMPLE_HOME}/test-network && ./network.sh down"
+
+                // restart docker container.
+                println 'restart network...'
+                execute "cd ${FABRIC_SAMPLE_HOME}/test-network && ./network.sh up createChannel -c ${FABRIC_CHANNEL_NAME} -ca"
+            }
+        }
+    }
+}
+
+/**
+ * Global configure for `peer`.
+ */
+final String GLO_EXPORT = """
+    cd ~/${FABRIC_SAMPLE_HOME}/bin \\
+    && export PATH=\${PWD}:\$PATH \\
+    && cd ~/${FABRIC_SAMPLE_HOME}/config \\
+    && export FABRIC_CFG_PATH=\${PWD} \\
+    && cd ~/${FABRIC_SAMPLE_HOME}/test-network \\
+    && export CORE_PEER_TLS_ENABLED=true \\
+    && export ORDERER_CA=\${PWD}/organizations/ordererOrganizations/example.com/tlsca/tlsca.example.com-cert.pem \\
+    && export PEER0_ORG1_CA=\${PWD}/organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem \\
+    && export PEER0_ORG2_CA=\${PWD}/organizations/peerOrganizations/org2.example.com/tlsca/tlsca.org2.example.com-cert.pem \\
+    && export ORDERER_ADMIN_TLS_SIGN_CERT=\${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt \\
+    && export ORDERER_ADMIN_TLS_PRIVATE_KEY=\${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.key \\
+"""
+/**
+ * Org1 configure for `peer`.
+ */
+final String ORG_1_EXPORT = """
+    cd ~/${FABRIC_SAMPLE_HOME}/test-network \\
+    && export CORE_PEER_LOCALMSPID="Org1MSP" \\
+    && export CORE_PEER_TLS_ROOTCERT_FILE=\${PWD}/organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem \\
+    && export CORE_PEER_MSPCONFIGPATH=\${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp \\
+    && export CORE_PEER_ADDRESS=localhost:7051 \\
+"""
+/**
+ * Org2 configure for `peer`.
+ */
+final String ORG_2_EXPORT = """
+    cd ~/${FABRIC_SAMPLE_HOME}/test-network \\
+    && export CORE_PEER_LOCALMSPID="Org2MSP" \\
+    && export CORE_PEER_TLS_ROOTCERT_FILE=\${PWD}/organizations/peerOrganizations/org2.example.com/tlsca/tlsca.org2.example.com-cert.pem \\
+    && export CORE_PEER_MSPCONFIGPATH=\${PWD}/organizations/peerOrganizations/org2.example.com/users/Admin@org2.example.com/msp \\
+    && export CORE_PEER_ADDRESS=localhost:9051 \\
+"""
+
+
+
+tasks.register('deployChaincode') {
+    doLast {
+        ssh.run {
+            session(remotes.vm) {
+                execute "echo server begin ssh session"
+
+                execute "[ -d ${FABRIC_WORKBENCH} ] && rm -rf ${FABRIC_WORKBENCH}"
+                execute "mkdir ${FABRIC_WORKBENCH}"
+
+                put from: "${projectDir.absolutePath}/build/install/${project.name}", into: "${FABRIC_WORKBENCH}"
+
+                // package chaincode.
+                execute "${GLO_EXPORT} && cd ~/${FABRIC_WORKBENCH} && peer lifecycle chaincode package ${FABRIC_CHAINCODE_NAME}.tar.gz --path ~/${FABRIC_WORKBENCH}/${project.name} --lang java --label ${project.name}_${project.version}"
+
+                // calculate package id.
+                String packageId = execute "${GLO_EXPORT} && cd ~/${FABRIC_WORKBENCH} && peer lifecycle chaincode calculatepackageid ~/${FABRIC_WORKBENCH}/${FABRIC_CHAINCODE_NAME}.tar.gz"
+
+                execute "echo server begin install chaincode"
+                // install chaincode.
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_1_EXPORT} \\
+                    && peer lifecycle chaincode install ~/${FABRIC_WORKBENCH}/${FABRIC_CHAINCODE_NAME}.tar.gz 
+                """
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_2_EXPORT} \\
+                    && peer lifecycle chaincode install ~/${FABRIC_WORKBENCH}/${FABRIC_CHAINCODE_NAME}.tar.gz 
+                """
+
+                // approve chaincode.
+                execute "echo server begin approve chaincode"
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_1_EXPORT} \\
+                    && peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile "\${ORDERER_CA}" --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} --version ${project.version} --package-id ${packageId} --sequence 1 
+                """
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_2_EXPORT} \\
+                    && peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile "\${ORDERER_CA}" --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} --version ${project.version} --package-id ${packageId} --sequence 1 
+                """
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_2_EXPORT} \\
+                    && peer lifecycle chaincode checkcommitreadiness --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} --version ${project.version} --sequence 1  --output json 
+                """
+
+                // commit chaincode definition.
+                execute "echo server begin commit chaincode"
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_2_EXPORT} \\
+                    && peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile "\${ORDERER_CA}" --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} --peerAddresses localhost:7051 --tlsRootCertFiles \$PEER0_ORG1_CA --peerAddresses localhost:9051 --tlsRootCertFiles \$PEER0_ORG2_CA --version ${project.version} --sequence 1 
+                """
+
+                // query chaincode deploy status.
+                execute "echo server query chaincode deploy status."
+                execute """
+                    ${GLO_EXPORT} \\
+                    && ${ORG_2_EXPORT} \\
+                    && peer lifecycle chaincode querycommitted --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} 
+                """
+
+                File cryptoDir = new File("${rootProject.projectDir.absolutePath}/cryptoFiles")
+                if (cryptoDir.exists()) {
+                    // delete directory and crypto files within.
+                    deleteFile(cryptoDir)
+                }
+                // make empty directory.
+                cryptoDir.mkdirs()
+                get from: "${FABRIC_SAMPLE_HOME}/test-network/organizations/peerOrganizations", into: cryptoDir
+
+                execute "echo server finish ssh session"
+            }
+        }
+    }
+}
+installDist.dependsOn clean
+deployChaincode.dependsOn installDist
+deployChaincode.dependsOn restartNetwork
+
+static void deleteFile(File file) {
+    if (file.isDirectory()) {
+        for (final File child in file.listFiles()) {
+            // delete children before delete itself.
+            deleteFile(child)
+        }
+    }
+    file.delete()
+}

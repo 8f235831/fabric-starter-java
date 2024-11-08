@@ -1,0 +1,5 @@
+rootProject.name = 'FabricStarterJava'
+
+include 'chaincode'
+include 'application'
+includeBuild("plugin")
