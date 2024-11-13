@@ -131,6 +131,11 @@ tasks.register('deployChaincode') {
                 execute "echo server query chaincode deploy status."
                 execute """
                     ${GLO_EXPORT} \\
+                    && ${ORG_1_EXPORT} \\
+                    && peer lifecycle chaincode querycommitted --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} 
+                """
+                execute """
+                    ${GLO_EXPORT} \\
                     && ${ORG_2_EXPORT} \\
                     && peer lifecycle chaincode querycommitted --channelID ${FABRIC_CHANNEL_NAME} --name ${FABRIC_CHAINCODE_NAME} 
                 """

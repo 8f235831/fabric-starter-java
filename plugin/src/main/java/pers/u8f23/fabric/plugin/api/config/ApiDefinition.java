@@ -20,7 +20,12 @@ public interface ApiDefinition {
     NamedDomainObjectContainer<ApiMethodDefinition> getMethods();
 
     default void registerMethod(String name, Map<String, String> parameters) {
+        registerMethod(name, "Void", parameters);
+    }
+
+    default void registerMethod(String name, String returnType, Map<String, String> parameters) {
         ApiMethodDefinition def = getMethods().create(name);
+        def.getReturnType().set(returnType);
         def.getParameters().putAll(parameters);
     }
 }

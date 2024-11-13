@@ -1,5 +1,7 @@
 package pers.u8f23.fabric.app;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import io.grpc.ChannelCredentials;
 import io.grpc.Grpc;
 import io.grpc.ManagedChannel;
@@ -8,11 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.hyperledger.fabric.client.*;
 import org.hyperledger.fabric.client.identity.*;
 import org.hyperledger.fabric.protos.gateway.ErrorDetail;
+import pers.u8f23.fabric.app.api.Asset;
 import pers.u8f23.fabric.app.api.ContractApi;
 import pers.u8f23.fabric.app.api.ProposedSubmit;
 
-import java.io.IOException;
-import java.io.Reader;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -47,7 +49,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         ManagedChannel channel = newGrpcConnection();
 
-        Gateway. Builder builder = Gateway.newInstance()
+        Gateway.Builder builder = Gateway.newInstance()
                 .identity(newIdentity())
                 .signer(newSigner())
                 .hash(Hash.SHA256)
@@ -76,16 +78,18 @@ public class Main {
     private static void chaincodeOperations(Gateway gateway) throws Exception {
         Network network = gateway.getNetwork(CHANNEL_NAME);
         Contract contract = network.getContract(CHAINCODE_NAME);
-        ContractApi api = new ContractApi(contract);
+        ContractApi api = new ContractApi(contract, new Gson());
 
         log.info("*** Result findAllAsset(): {}", api.findAllAsset());
-        ProposedSubmit proposedSubmit = api.createAsset("test wgvwr");
+        ProposedSubmit<Asset> proposedSubmit = api.createAsset("test wgvwr");
         log.info("*** Result proposedSubmit.blockingGetEvaluatedRes(): {}", proposedSubmit.blockingGetEvaluatedRes());
-        log.info("*** Result proposedSubmit.blockingSummit(): {}", proposedSubmit.blockingSummit());
+        log.info("*** Result proposedSubmit.blockingGetSubmitStatus(): {}", proposedSubmit.blockingGetSubmitStatus());
         log.info("*** Result findAllAsset(): {}", api.findAllAsset());
     }
 
     private static ManagedChannel newGrpcConnection() throws IOException {
+        new Gson().fromJson(new InputStreamReader(new ByteArrayInputStream("".getBytes())), new TypeToken<String>() {
+        });
         ChannelCredentials credentials = TlsChannelCredentials.newBuilder()
                 .trustManager(TLS_CERT_PATH.toFile())
                 .build();

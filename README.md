@@ -5,7 +5,7 @@
 
 项目采用 Gradle 多模块框架，集成了 Chaincode 的远程部署，并支持在本地运行或测试 Application。 
 
-项目基于 Gradle Plugin 实现了合约 API 定义的自动生成，通过同一份配置文件为 Chaincode 和 Application 分别生成各自适用的 Java 代码文件。
+项目基于 Gradle Plugin + JavaPoet 实现了合约 API 定义的自动生成，通过同一份配置为 Chaincode 和 Application 分别生成各自适用的 Java 代码文件。
 
 ### Fabric 服务器配置
 运行项目前，需要在 Linux 服务器上部署Fabric环境。
@@ -114,7 +114,7 @@ cd ~/fabric/fabric-samples/asset-transfer-basic/application-gateway-java/
 
 1. 修改`./chaincodeDefinition.gradle`文件中的合约接口定义；
 2. 执行`./gradlew chaincode:build application:build`，生成合约 API 定义代码；
-3. 修改`./chaincode`下的源码文件，根据生成的API，实现具体的合约程序；
+3. 修改`./chaincode`下的源码文件，继承生成的API接口并按照Fabric Chaincode规范添加必要的注解和接口，实现具体的方法以完成合约程序；
 4. 部署 Chaincode；
-5. 修改`./application`下的源码文件，根据生成的API，实现具体的应用程序；
+5. 修改`./application`下的源码文件，根据生成的API构造对象并通过方法访问Fabric合约，以此实现具体的应用程序；
 6. 运行 Application。

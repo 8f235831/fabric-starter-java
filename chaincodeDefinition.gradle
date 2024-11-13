@@ -16,22 +16,22 @@ generateApi {
 
         // define api classes.
         registerApi("AbstractAssetContractSubmit", "submit") {
-            registerMethod("createAsset", [
+            registerMethod("createAsset", "Asset", [
                     "value": "String"
             ])
-            registerMethod("updateAsset", [
+            registerMethod("updateAsset", "Void", [
                     "assetId": "String",
                     "value"  : "String"
             ])
-            registerMethod("deleteAsset", [
+            registerMethod("deleteAsset", "Void", [
                     "assetId": "String"
             ])
         }
         registerApi("AbstractAssetContractEvaluate", "evaluate") {
-            registerMethod("findAsset", [
+            registerMethod("findAsset", "Asset", [
                     "assetId": "String"
             ])
-            registerMethod("findAllAsset", [:])
+            registerMethod("findAllAsset", "java.util.List<Asset>", [:])
         }
     }
 }

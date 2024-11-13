@@ -80,4 +80,5 @@ public abstract class AbstractApiGenerator {
         }
         return String.format("set%s%s", Character.toUpperCase(first), fieldName.substring(1));
     }
+
 }

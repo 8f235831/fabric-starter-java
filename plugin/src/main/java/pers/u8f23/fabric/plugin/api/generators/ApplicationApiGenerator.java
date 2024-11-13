@@ -7,15 +7,18 @@ import pers.u8f23.fabric.plugin.api.config.ClassesDefinition;
 import pers.u8f23.fabric.plugin.api.config.PojoDefinition;
 
 import javax.lang.model.element.Modifier;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.io.ByteArrayInputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.util.*;
 import java.util.function.Function;
+
+import static pers.u8f23.fabric.plugin.api.Constants.RESPONSE_BODY_CLASS_NAME;
 
 public final class ApplicationApiGenerator extends AbstractApiGenerator {
     private static final String INJECT_CLASS_NAME = "ContractApiInjectable";
     private static final String INJECTED_CONTRACT_METHOD_NAME = "getContract";
+    private static final String INJECTED_GSON_METHOD_NAME = "getGson";
     private static final String PROPOSED_SUBMIT_RES_CLASS_NAME = "ProposedSubmit";
 
     private static final ClassName LOMBOK_GETTER_ANNOTATION = ClassName.get("lombok", "Getter");
@@ -23,6 +26,11 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
     private static final ClassName LOMBOK_BUILDER_ANNOTATION = ClassName.get("lombok", "Builder");
     private static final ClassName LOMBOK_NO_ARGUS_CONS_ANNOTATION = ClassName.get("lombok", "NoArgsConstructor");
     private static final ClassName LOMBOK_ALL_ARGUS_CONS_ANNOTATION = ClassName.get("lombok", "AllArgsConstructor");
+    private static final ClassName LOMBOK_REQ_ARGUS_CONS_ANNOTATION = ClassName.get("lombok", "RequiredArgsConstructor");
+    private static final ClassName LOMBOK_TO_STRING_ANNOTATION = ClassName.get("lombok", "ToString");
+    private static final ClassName GSON_CLASS = ClassName.get("com.google.gson", "Gson");
+    private static final ClassName GSON_SERIALIZED_NAME_ANNOTATION = ClassName.get("com.google.gson.annotations", "SerializedName");
+    private static final ClassName GSON_TYPE_TOKEN_CLASS = ClassName.get("com.google.gson.reflect", "TypeToken");
     private static final ClassName API_CONTRACT_INJECT_CLASS = ClassName.get("", INJECT_CLASS_NAME);
     private static final ClassName PROPOSED_SUBMIT_RES_CLASS = ClassName.get("", PROPOSED_SUBMIT_RES_CLASS_NAME);
 
@@ -39,20 +47,9 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
                 .addAnnotation(LOMBOK_BUILDER_ANNOTATION)
                 .addAnnotation(LOMBOK_NO_ARGUS_CONS_ANNOTATION)
                 .addAnnotation(LOMBOK_ALL_ARGUS_CONS_ANNOTATION)
+                .addAnnotation(LOMBOK_TO_STRING_ANNOTATION)
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL);
-        def.getFields().get().forEach((fieldName, typeStr) -> {
-            ClassName type = declareCustomClass(typeStr);
-            AnnotationSpec gsonFieldAnnotation = AnnotationSpec
-                    .builder(declareCustomClass("com.google.gson.annotations", "SerializedName"))
-                    .addMember("value", "$S", fieldName)
-                    .build();
-            // add field.
-            typeBuilder.addField(FieldSpec
-                    .builder(type, fieldName, Modifier.PRIVATE)
-                    .addAnnotation(gsonFieldAnnotation)
-                    .build()
-            );
-        });
+        def.getFields().get().forEach((fieldName, typeStr) -> decoratePojoWithField(fieldName, declareCustomClass(typeStr), typeBuilder));
         return typeBuilder.build();
     }
 
@@ -85,13 +82,15 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
         return List.of(
                 generateContextInjectInterface(),
                 generateProposedSubmitResClass(),
-                generateComplexInterfaceImpl(classes)
+                generateComplexInterfaceImpl(classes),
+                generateResponseBodyClass()
         );
     }
 
     private MethodSpec buildApiMethodEvaluate(ApiMethodDefinition def) {
+        TypeName returnType = ParameterizedTypeName.get(declareCustomClass(RESPONSE_BODY_CLASS_NAME), declareCustomClass(def.getReturnType().get()));
         MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(def.getName());
-        methodBuilder.returns(String.class)
+        methodBuilder.returns(returnType)
                 .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT);
         def.getParameters().get().forEach((paramName, paramTypeName) -> {
             ClassName paramType = declareCustomClass(paramTypeName);
@@ -100,8 +99,11 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
         Set<String> actualParams = def.getParameters().get().keySet();
         String actualParamsStr = actualParams.isEmpty() ? "" : ", " + String.join(", ", actualParams);
         CodeBlock.Builder codeBuilder = CodeBlock.builder()
-                .addStatement("byte[] evaluatedBytes = $L().evaluateTransaction($S$L)", INJECTED_CONTRACT_METHOD_NAME, def.getName(), actualParamsStr)
-                .addStatement("return new String(evaluatedBytes, $T.UTF_8)", StandardCharsets.class);
+                .addStatement("byte[] evaluatedBytes = this.$L().evaluateTransaction($S$L)", INJECTED_CONTRACT_METHOD_NAME, def.getName(), actualParamsStr)
+                .addStatement("$T reader = new $T(new $T(evaluatedBytes))", Reader.class, InputStreamReader.class, ByteArrayInputStream.class)
+                .addStatement("$T gson = this.$L()", GSON_CLASS, INJECTED_GSON_METHOD_NAME)
+                .addStatement("$T<$T> typeToken = new $T<>(){}", GSON_TYPE_TOKEN_CLASS, returnType, GSON_TYPE_TOKEN_CLASS)
+                .addStatement("return gson.fromJson(reader, typeToken.getType())");
         methodBuilder.addCode(codeBuilder.build())
                 .addException(Exception.class);
         return methodBuilder.build();
@@ -109,7 +111,9 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
 
     private MethodSpec buildApiMethodSubmit(ApiMethodDefinition def) {
         MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(def.getName());
-        methodBuilder.returns(PROPOSED_SUBMIT_RES_CLASS)
+        TypeName returnType = ParameterizedTypeName.get(PROPOSED_SUBMIT_RES_CLASS, declareCustomClass(def.getReturnType().get()));
+        TypeName responseType = ParameterizedTypeName.get(declareCustomClass(RESPONSE_BODY_CLASS_NAME), declareCustomClass(def.getReturnType().get()));
+        methodBuilder.returns(returnType)
                 .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT);
         def.getParameters().get().forEach((paramName, paramTypeName) -> {
             ClassName paramType = declareCustomClass(paramTypeName);
@@ -117,21 +121,19 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
         });
         Set<String> actualParams = def.getParameters().get().keySet();
         String actualParamsStr = actualParams.isEmpty() ? "" : String.join(", ", actualParams);
-
-
         CodeBlock.Builder codeBuilder = CodeBlock.builder()
-                .add("$T commit = $L()\n", SUBMITTED_TRANSACTION_CLASS, INJECTED_CONTRACT_METHOD_NAME)
+                .add("$T commit = this.$L()\n", SUBMITTED_TRANSACTION_CLASS, INJECTED_CONTRACT_METHOD_NAME)
                 .add("\t.newProposal($S)\n", def.getName())
                 .add("\t.addArguments($L)\n", actualParamsStr)
                 .add("\t.build()\n")
                 .add("\t.endorse()\n")
                 .addStatement("\t.submitAsync()")
-                .addStatement("return new $T(commit)", PROPOSED_SUBMIT_RES_CLASS);
+                .addStatement("$T<$T> typeToken = new $T<>(){}", GSON_TYPE_TOKEN_CLASS, responseType, GSON_TYPE_TOKEN_CLASS)
+                .addStatement("return new $T<>(commit, this.$L(), typeToken)", PROPOSED_SUBMIT_RES_CLASS, INJECTED_GSON_METHOD_NAME);
         methodBuilder.addCode(codeBuilder.build())
                 .addException(Exception.class);
         return methodBuilder.build();
     }
-
 
     private TypeSpec generateContextInjectInterface() {
         TypeSpec.Builder typeBuilder = TypeSpec.interfaceBuilder(INJECT_CLASS_NAME);
@@ -142,31 +144,86 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
                 .returns(API_CONTRACT_CLASS)
                 .build()
         );
+        typeBuilder.addMethod(MethodSpec
+                .methodBuilder(INJECTED_GSON_METHOD_NAME)
+                .addModifiers(Modifier.ABSTRACT, Modifier.PUBLIC)
+                .returns(GSON_CLASS)
+                .build()
+        );
         return typeBuilder.build();
     }
 
     private TypeSpec generateProposedSubmitResClass() {
+        TypeVariableName genericClass = TypeVariableName.get("T");
+        TypeName apiResponseType = ParameterizedTypeName.get(declareCustomClass(RESPONSE_BODY_CLASS_NAME), genericClass);
         TypeSpec.Builder typeBuilder = TypeSpec.classBuilder(PROPOSED_SUBMIT_RES_CLASS_NAME);
         typeBuilder.addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                .addAnnotation(LOMBOK_ALL_ARGUS_CONS_ANNOTATION);
+                .addTypeVariable(genericClass)
+                .addAnnotation(LOMBOK_REQ_ARGUS_CONS_ANNOTATION);
         typeBuilder.addField(FieldSpec
                 .builder(SUBMITTED_TRANSACTION_CLASS, "transaction")
                 .addModifiers(Modifier.FINAL, Modifier.PRIVATE)
                 .build()
         );
-        typeBuilder.addMethod(MethodSpec
-                .methodBuilder("blockingGetEvaluatedRes")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(String.class)
-                .addStatement("return new String(transaction.getResult(), $T.UTF_8)", StandardCharsets.class)
+        typeBuilder.addField(FieldSpec
+                .builder(SUBMIT_STATUS_CLASS, "status")
+                .addModifiers(Modifier.PRIVATE)
+                .build()
+        );
+        typeBuilder.addField(FieldSpec
+                .builder(apiResponseType, "response")
+                .addModifiers(Modifier.PRIVATE)
+                .build()
+        );
+        typeBuilder.addField(FieldSpec
+                .builder(GSON_CLASS, "gson")
+                .addModifiers(Modifier.FINAL, Modifier.PRIVATE)
+                .build()
+        );
+        typeBuilder.addField(FieldSpec
+                .builder(ParameterizedTypeName.get(GSON_TYPE_TOKEN_CLASS, apiResponseType), "responseTypeToken")
+                .addModifiers(Modifier.FINAL, Modifier.PRIVATE)
+                .build()
+        );
+        typeBuilder.addField(FieldSpec
+                .builder(Object.class, "lock")
+                .addModifiers(Modifier.FINAL, Modifier.PRIVATE)
+                .initializer("new $T()", Object.class)
                 .build()
         );
         typeBuilder.addMethod(MethodSpec
-                .methodBuilder("blockingSummit")
+                .methodBuilder("blockingGetSubmitStatus")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(SUBMIT_STATUS_CLASS)
                 .addException(SUBMIT_STATUS_EXCEPTION_CLASS)
-                .addStatement("return transaction.getStatus()")
+                .beginControlFlow("if (this.status != null)")
+                .addStatement("return this.status")
+                .endControlFlow()
+                .beginControlFlow("synchronized (this.lock)")
+                .beginControlFlow("if (this.status != null)")
+                .addStatement("return this.status")
+                .endControlFlow()
+                .addStatement("this.status = this.transaction.getStatus()")
+                .addStatement("return this.status")
+                .endControlFlow()
+                .build()
+        );
+        typeBuilder.addMethod(MethodSpec
+                .methodBuilder("blockingGetEvaluatedRes")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(apiResponseType)
+                .beginControlFlow("if (this.response != null)")
+                .addStatement("return this.response")
+                .endControlFlow()
+                .beginControlFlow("synchronized (this.lock)")
+                .beginControlFlow("if (this.response != null)")
+                .addStatement("return this.response")
+                .endControlFlow()
+                .addStatement("byte[] evaluatedBytes = this.transaction.getResult()")
+                .addStatement("$T reader = new $T(new $T(evaluatedBytes))", Reader.class, InputStreamReader.class, ByteArrayInputStream.class)
+                .addStatement("this.response = this.gson.fromJson(reader, this.responseTypeToken.getType())")
+                .addStatement("return this.response")
+                .endControlFlow()
                 .build()
         );
         return typeBuilder.build();
@@ -176,13 +233,16 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
         TypeSpec.Builder typeBuilder = TypeSpec.classBuilder(classes.getComplexApiClassName().get());
         typeBuilder.addModifiers(Modifier.PUBLIC, Modifier.FINAL);
         typeBuilder.addField(API_CONTRACT_CLASS, "contract", Modifier.FINAL, Modifier.PRIVATE);
+        typeBuilder.addField(GSON_CLASS, "gson", Modifier.FINAL, Modifier.PRIVATE);
         typeBuilder.addSuperinterface(API_CONTRACT_INJECT_CLASS);
 
         MethodSpec constructor = MethodSpec
                 .constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(API_CONTRACT_CLASS, "contract")
+                .addParameter(GSON_CLASS, "gson")
                 .addStatement("this.contract = contract")
+                .addStatement("this.gson = gson")
                 .build();
         typeBuilder.addMethod(constructor);
         MethodSpec contractInjectOverride = MethodSpec
@@ -193,6 +253,14 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
                 .addStatement("return this.contract")
                 .build();
         typeBuilder.addMethod(contractInjectOverride);
+        MethodSpec gsonInjectOverride = MethodSpec
+                .methodBuilder(INJECTED_GSON_METHOD_NAME)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override.class)
+                .returns(GSON_CLASS)
+                .addStatement("return this.gson")
+                .build();
+        typeBuilder.addMethod(gsonInjectOverride);
 
         classes.getApis().forEach(def -> {
             ClassName interfaceClass = ClassName.get("", def.getName());
@@ -200,5 +268,38 @@ public final class ApplicationApiGenerator extends AbstractApiGenerator {
         });
 
         return typeBuilder.build();
+    }
+
+    public TypeSpec generateResponseBodyClass() {
+        TypeVariableName genericClass = TypeVariableName.get("T");
+        TypeSpec.Builder typeBuilder = TypeSpec.classBuilder(RESPONSE_BODY_CLASS_NAME)
+                .addAnnotation(LOMBOK_GETTER_ANNOTATION)
+                .addAnnotation(LOMBOK_SETTER_ANNOTATION)
+                .addAnnotation(LOMBOK_BUILDER_ANNOTATION)
+                .addAnnotation(LOMBOK_NO_ARGUS_CONS_ANNOTATION)
+                .addAnnotation(LOMBOK_ALL_ARGUS_CONS_ANNOTATION)
+                .addAnnotation(LOMBOK_TO_STRING_ANNOTATION)
+                .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                .addTypeVariable(genericClass);
+        Map<String, TypeName> map = new LinkedHashMap<>();
+        map.put("body", genericClass);
+        map.put("code", TypeName.INT);
+        map.put("msg", ClassName.get(String.class));
+        map.forEach((fieldName, fieldType) -> decoratePojoWithField(fieldName, fieldType, typeBuilder));
+        return typeBuilder.build();
+    }
+
+    private void decoratePojoWithField(String fieldName, TypeName fieldType, TypeSpec.Builder typeBuilder) {
+        // add field.
+        AnnotationSpec gsonFieldAnnotation = AnnotationSpec
+                .builder(GSON_SERIALIZED_NAME_ANNOTATION)
+                .addMember("value", "$S", fieldName)
+                .build();
+        // add field.
+        typeBuilder.addField(FieldSpec
+                .builder(fieldType, fieldName, Modifier.PRIVATE)
+                .addAnnotation(gsonFieldAnnotation)
+                .build()
+        );
     }
 }
