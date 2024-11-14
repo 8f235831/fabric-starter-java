@@ -28,7 +28,7 @@ public final class AssetContract implements ContractInterface, ContractApi {
 
     @Transaction(intent = Transaction.TYPE.SUBMIT)
     @Override
-    public Response<Asset> createAsset(final Context context, final String value) {
+    public String createAsset(final Context context, final String value) {
         ChaincodeStub stub = context.getStub();
         Instant time = stub.getTxTimestamp();
         String clientId = context.getClientIdentity().getId();
@@ -41,21 +41,21 @@ public final class AssetContract implements ContractInterface, ContractApi {
         Asset asset = new Asset(assetId, clientId, clientId, time64, -1, -1, value);
         String sortedJson = genson.serialize(asset);
         stub.putStringState(assetId, sortedJson);
-        return new Response<>(asset);
+        return genson.serialize(new Response<>(asset));
     }
 
     @Transaction(intent = Transaction.TYPE.SUBMIT)
     @Override
-    public Response<Void> updateAsset(final Context context, final String assetId, final String value) {
+    public String updateAsset(final Context context, final String assetId, final String value) {
         ChaincodeStub stub = context.getStub();
         String assetJson = stub.getStringState(assetId);
         if (assetJson == null || assetJson.isEmpty()) {
-            return new Response<>(-1, "ERR_ASSET_NOT_EXIST");
+            return genson.serialize(new Response<>(-1, "ERR_ASSET_NOT_EXIST"));
         }
         Asset asset = genson.deserialize(assetJson, Asset.class);
         String clientId = context.getClientIdentity().getId();
         if (!Objects.equals(asset.getOwnerId(), clientId)) {
-            return new Response<>(-1, "ERR_NOT_ASSET_OWNER");
+            return genson.serialize(new Response<>(-1, "ERR_NOT_ASSET_OWNER"));
         }
         long time = stub.getTxTimestamp().toEpochMilli();
         Asset newAsset = new Asset(
@@ -68,40 +68,41 @@ public final class AssetContract implements ContractInterface, ContractApi {
                 value
         );
         stub.putStringState(assetId, genson.serialize(newAsset));
-        return new Response<>();
+        return genson.serialize(new Response<>());
     }
 
     @Transaction(intent = Transaction.TYPE.SUBMIT)
     @Override
-    public Response<Void> deleteAsset(final Context context, final String assetId) {
+    public String deleteAsset(final Context context, final String assetId) {
         ChaincodeStub stub = context.getStub();
         String assetJson = stub.getStringState(assetId);
         if (assetJson == null || assetJson.isEmpty()) {
-            return new Response<>(-1, "ERR_ASSET_NOT_EXIST");
+            return genson.serialize(new Response<>(-1, "ERR_ASSET_NOT_EXIST"));
         }
         Asset asset = genson.deserialize(assetJson, Asset.class);
         String clientId = context.getClientIdentity().getId();
         if (!Objects.equals(asset.getOwnerId(), clientId)) {
-            return new Response<>(-1, "ERR_NOT_ASSET_OWNER");
+            return genson.serialize(new Response<>(-1, "ERR_NOT_ASSET_OWNER"));
         }
         stub.delState(assetId);
-        return new Response<>();
+        return genson.serialize(new Response<>());
     }
 
     @Transaction(intent = Transaction.TYPE.EVALUATE)
     @Override
-    public Response<Asset> findAsset(final Context context, final String assetId) {
+    public String findAsset(final Context context, final String assetId) {
         ChaincodeStub stub = context.getStub();
         String assetJson = stub.getStringState(assetId);
         if (assetJson == null || assetJson.isEmpty()) {
-            return new Response<>();
+            return genson.serialize(new Response<>());
         }
-        return new Response<>(genson.deserialize(assetJson, Asset.class));
+        Response<Asset> res = new Response<>(genson.deserialize(assetJson, Asset.class));
+        return genson.serialize(res);
     }
 
     @Transaction(intent = Transaction.TYPE.EVALUATE)
     @Override
-    public Response<List<Asset>> findAllAsset(final Context context) {
+    public String findAllAsset(final Context context) {
         ChaincodeStub stub = context.getStub();
         QueryResultsIterator<KeyValue> resultPairs = stub.getStateByRange("", "");
         List<Asset> assets = new ArrayList<>();
@@ -113,7 +114,7 @@ public final class AssetContract implements ContractInterface, ContractApi {
                 throw new ChaincodeException(msg);
             }
         }
-        return new Response<>(assets);
+        return genson.serialize(new Response<>(assets));
     }
 
     private boolean existAsset(final ChaincodeStub stub, final String assetId) {

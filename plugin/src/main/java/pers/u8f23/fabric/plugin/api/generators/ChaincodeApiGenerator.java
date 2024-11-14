@@ -44,8 +44,9 @@ public final class ChaincodeApiGenerator extends AbstractApiGenerator {
             MethodSpec.Builder methodBuilder = MethodSpec
                     .methodBuilder(methodDef.getName())
                     .addModifiers(Modifier.ABSTRACT, Modifier.PUBLIC)
-                    .returns(returnType)
-                    .addParameter(API_METHOD_PARAM_CONTEXT, "context");
+                    .returns(String.class)
+                    .addParameter(API_METHOD_PARAM_CONTEXT, "context")
+                    .addJavadoc("@return {@link $T}", returnType);
             methodDef.getParameters().get().forEach((paramName, paramType) ->
                     methodBuilder.addParameter(declareCustomClass(paramType), paramName)
             );
